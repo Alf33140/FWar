@@ -1,0 +1,124 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Mon RPG Hexagonal{% endblock %}
+
+{% block body %}
+<style>
+
+    .map-container {
+        position: relative;
+        background: #222;
+        width: 100vw;
+        height: 100vh;
+        overflow: auto;
+        padding: 50px;
+    }
+
+    .hex {
+        position: absolute;
+        width: 60px;
+        height: 52px; 
+        background-color: #4CAF50;
+        clip-path: polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: white;
+        transition: all 0.2s ease;
+        user-select: none; /* Empêche la sélection du texte au clic */
+    }
+
+    .hex:hover {
+        background-color: #81C784;
+        cursor: pointer;
+        z-index: 5;
+    }
+
+    /* Style pour la case sélectionnée */
+    .hex.selected {
+        background-color: #ffeb3b !important; /* Jaune */
+        color: #000;
+        z-index: 10;
+        box-shadow: 0 0 15px rgba(255, 235, 59, 0.7);
+        transform: scale(1.1); /* Légère emphase */
+    }
+
+    #info-box {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        font-family: Arial, sans-serif;
+        pointer-events: none; /* Ne gêne pas le clic sur la carte */
+    }
+    /* Couleurs des terrains */
+    .hex.plaine        { background-color: #7cb342; } /* Vert herbe */
+    .hex.colline       { background-color: #aed581; } /* Vert clair */
+    .hex.montagne      { background-color: #795548; } /* Brun */
+    .hex.desert        { background-color: #fbc02d; } /* Jaune ocre */
+    .hex.sable         { background-color: #fff176; } /* Jaune sable */
+    .hex.marecage      { background-color: #4db6ac; } /* Vert d'eau sombre */
+    .hex.neige         { background-color: #ffffff; color: #333; } /* Blanc */
+    .hex.steppe        { background-color: #d4e157; } /* Vert sec / Olive */
+    .hex.eau           { background-color: #4fc3f7; } /* Bleu clair */
+    .hex.eau_profonde  { background-color: #0288d1; cursor: not-allowed; } /* Bleu foncé */
+
+    /* On s'assure que le texte reste lisible sur les couleurs sombres ou blanches */
+    .hex.neige, .hex.sable, .hex.desert { color: #000; }
+</style>
+
+<div class="map-container">
+    {% for tile in tiles %}
+        {% set x = tile.coordQ * 45 %}
+        {% set y = tile.coordR * 52 + (tile.coordQ % 2) * 26 %}
+
+        {# Notez l'ajout de tile.type dans la liste des classes #}
+        <div class="hex {{ tile.type }}" 
+             style="left: {{ x }}px; top: {{ y }}px;"
+             data-q="{{ tile.coordQ }}"
+             data-r="{{ tile.coordR }}"
+             data-type="{{ tile.type }}"
+             title="{{ tile.type }} ({{ tile.coordQ }},{{ tile.coordR }})">
+            {{ tile.coordQ }},{{ tile.coordR }}
+        </div>
+    {% endfor %}
+</div>
+
+<div id="info-box">
+    Case sélectionnée : <span id="selected-coords">Aucune</span>
+</div>
+
+<div style="position: fixed; top: 10px; left: 10px;">
+    <a href="{{ path('app_map_generate') }}" style="background: white; padding: 10px; text-decoration: none; border-radius: 5px; color: black; font-weight: bold;">
+        Réinitialiser la carte
+    </a>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const hexes = document.querySelectorAll('.hex');
+        const infoDisplay = document.getElementById('selected-coords');
+
+        hexes.forEach(hex => {
+            hex.addEventListener('click', function() {
+                // 1. On retire la classe 'selected' de toutes les cases
+                hexes.forEach(h => h.classList.remove('selected'));
+
+                // 2. On ajoute la classe à la case cliquée
+                this.classList.add('selected');
+
+                // 3. On met à jour l'affichage des infos
+                const q = this.getAttribute('data-q');
+                const r = this.getAttribute('data-r');
+                infoDisplay.innerText = `Q: ${q}, R: ${r}`;
+                
+                console.log(`Tuile sélectionnée : Q=${q}, R=${r}`);
+            });
+        });
+    });
+</script>
+{% endblock %}
