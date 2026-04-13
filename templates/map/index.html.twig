@@ -11,13 +11,15 @@
         top: 20px; 
         left: 20px; 
         color: white; 
-        background: rgba(0,0,0,0.7); 
+        background: rgba(0,0,0,0.8); 
         padding: 15px; 
         border-radius: 8px; 
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         pointer-events: none;
         border: 1px solid #444;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
+    .controls { font-size: 0.8em; color: #aaa; margin-top: 10px; }
     .key { color: #fbc02d; font-weight: bold; }
 </style>
 
@@ -27,6 +29,7 @@
     Perception: <span id="percept-display">...</span><br>
     <hr style="border: 0; border-top: 1px solid #444;">
     <small>Status: <span id="status">Initialisation...</span></small>
+    <div class="controls">Déplacement: <span class="key">Flèches</span></div>
 </div>
 
 <canvas id="mapCanvas"></canvas>
@@ -35,14 +38,28 @@
 const canvas = document.getElementById('mapCanvas');
 const ctx = canvas.getContext('2d');
 
+// --- 1. CHARGEMENT DES IMAGES ---
+const terrainImages = {};
+const terrains = ['plaine', 'colline', 'montagne', 'desert', 'sable', 'marecage', 'neige', 'steppe', 'eau', 'eau_profonde'];
+let imagesLoaded = 0;
+
+terrains.forEach(t => {
+    terrainImages[t] = new Image();
+    terrainImages[t].src = `/images/tiles/${t}.png`;
+    terrainImages[t].onload = () => {
+        imagesLoaded++;
+        if (imagesLoaded === terrains.length) updateMap(); // Redessine quand tout est prêt
+    };
+});
+
 // --- CONFIGURATION DU JOUEUR ---
 let player = {
-    q: 250, // Position centrale sur la carte 500x500
+    q: 250, 
     r: 250,
-    perception: 10 // Votre limite max
+    perception: 10 
 };
 
-const hexSize = 30; // Taille un peu plus grande pour mieux voir
+const hexSize = 30; 
 const hexHeight = Math.sqrt(3) * hexSize;
 const colors = {
     'plaine': '#7cb342', 'colline': '#aed581', 'montagne': '#795548',
@@ -51,98 +68,100 @@ const colors = {
     'eau_profonde': '#0288d1'
 };
 
-// Ajustement taille canvas
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    updateMap();
 }
 window.addEventListener('resize', resize);
 resize();
 
-// Fonction pour dessiner un hexagone
 function drawHex(x, y, type, q, r) {
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-        let angle = (Math.PI / 3) * i;
-        let px = x + hexSize * Math.cos(angle);
-        let py = y + hexSize * Math.sin(angle);
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.fillStyle = colors[type] || '#333';
-    ctx.fill();
-    
-    // Bordure discrète
-    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    const img = terrainImages[type];
 
-    // Optionnel : Afficher les coordonnées si on est assez près
-    if (hexSize > 25) {
-        ctx.fillStyle = "rgba(0,0,0,0.3)";
-        ctx.font = "10px Arial";
+    if (img && img.complete && img.naturalWidth !== 0) {
+        // Dessin de l'image (légèrement agrandie pour éviter les interstices)
+        ctx.drawImage(img, x - hexSize, y - hexSize, hexSize * 2.1, hexSize * 2.1);
+    } else {
+        // Fallback vectoriel
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            let angle = (Math.PI / 3) * i;
+            let px = x + hexSize * Math.cos(angle);
+            let py = y + hexSize * Math.sin(angle);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = colors[type] || '#333';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.stroke();
+    }
+
+    // Coordonnées textuelles
+    if (hexSize > 20) {
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.font = "bold 10px Arial";
         ctx.textAlign = "center";
         ctx.fillText(`${q},${r}`, x, y + 5);
     }
 }
 
-// Fonction pour dessiner le joueur
 function drawPlayer(x, y) {
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(x, y, hexSize / 2, 0, Math.PI * 2);
+    ctx.arc(x, y, hexSize / 1.5, 0, Math.PI * 2);
     ctx.fillStyle = "white";
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "white";
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "cyan";
     ctx.fill();
-    ctx.shadowBlur = 0; // Reset pour ne pas affecter le reste
-    ctx.strokeStyle = "black";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.8)";
     ctx.stroke();
+    ctx.restore();
 }
 
 function updateMap() {
-    document.getElementById('status').innerText = "Chargement...";
+    const statusEl = document.getElementById('status');
+    statusEl.innerText = "Chargement...";
     document.getElementById('pos-display').innerText = `${player.q}, ${player.r}`;
     document.getElementById('percept-display').innerText = player.perception;
 
-    // Appel à votre nouvelle route API
     fetch(`/api/map/${player.q}/${player.r}/${player.perception}`)
         .then(response => response.json())
         .then(tiles => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
             const centerX = canvas.width / 2;
             const centerY = canvas.height / 2;
 
             tiles.forEach(tile => {
-                // Calcul de la position relative au joueur
-                const relQ = tile.q - player.q;
-                const relR = tile.r - player.r;
-
-                // Position en pixels (Flat Top)
-                // On ajoute un offset pour que le joueur (q,r) soit au centre exact
-                const x = centerX + relQ * (hexSize * 1.5);
-                const y = centerY + (relR * hexHeight) + ((tile.q % 2 !== player.q % 2) ? hexHeight / 2 : 0);
-                
-                // Note : Le calcul du décalage (y) ci-dessus est simplifié pour le canvas centré
-                // Pour une précision parfaite sur les hexagones emboîtés :
                 const pixelX = centerX + (tile.q - player.q) * (hexSize * 1.5);
                 const pixelY = centerY + (tile.r - player.r) * hexHeight + (tile.q % 2) * (hexHeight / 2) - (player.q % 2) * (hexHeight / 2);
-
                 drawHex(pixelX, pixelY, tile.t, tile.q, tile.r);
             });
 
-            // On dessine le joueur toujours au centre
             drawPlayer(centerX, centerY);
-            document.getElementById('status').innerText = "Ok";
+            statusEl.innerText = "Prêt";
         })
         .catch(err => {
-            document.getElementById('status').innerText = "Erreur API";
+            statusEl.innerText = "Erreur API";
             console.error(err);
         });
 }
 
-// Premier chargement
+// --- GESTION DES DÉPLACEMENTS ---
+window.addEventListener('keydown', (e) => {
+    switch(e.key) {
+        case 'ArrowUp': player.r--; break;
+        case 'ArrowDown': player.r++; break;
+        case 'ArrowLeft': player.q--; break;
+        case 'ArrowRight': player.q++; break;
+        default: return;
+    }
+    updateMap();
+});
+
 updateMap();
 </script>
 {% endblock %}
