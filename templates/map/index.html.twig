@@ -1,124 +1,148 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Mon RPG Hexagonal{% endblock %}
+{% block title %}RPG Hexagonal - Vue Perception{% endblock %}
 
 {% block body %}
 <style>
-
-    .map-container {
-        position: relative;
-        background: #222;
-        width: 100vw;
-        height: 100vh;
-        overflow: auto;
-        padding: 50px;
+    body { margin: 0; background: #000; overflow: hidden; }
+    canvas { display: block; }
+    #ui { 
+        position: fixed; 
+        top: 20px; 
+        left: 20px; 
+        color: white; 
+        background: rgba(0,0,0,0.7); 
+        padding: 15px; 
+        border-radius: 8px; 
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        pointer-events: none;
+        border: 1px solid #444;
     }
-
-    .hex {
-        position: absolute;
-        width: 60px;
-        height: 52px; 
-        background-color: #4CAF50;
-        clip-path: polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 10px;
-        color: white;
-        transition: all 0.2s ease;
-        user-select: none; /* Empêche la sélection du texte au clic */
-    }
-
-    .hex:hover {
-        background-color: #81C784;
-        cursor: pointer;
-        z-index: 5;
-    }
-
-    /* Style pour la case sélectionnée */
-    .hex.selected {
-        background-color: #ffeb3b !important; /* Jaune */
-        color: #000;
-        z-index: 10;
-        box-shadow: 0 0 15px rgba(255, 235, 59, 0.7);
-        transform: scale(1.1); /* Légère emphase */
-    }
-
-    #info-box {
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        background: rgba(0, 0, 0, 0.8);
-        color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        font-family: Arial, sans-serif;
-        pointer-events: none; /* Ne gêne pas le clic sur la carte */
-    }
-    /* Couleurs des terrains */
-    .hex.plaine        { background-color: #7cb342; } /* Vert herbe */
-    .hex.colline       { background-color: #aed581; } /* Vert clair */
-    .hex.montagne      { background-color: #795548; } /* Brun */
-    .hex.desert        { background-color: #fbc02d; } /* Jaune ocre */
-    .hex.sable         { background-color: #fff176; } /* Jaune sable */
-    .hex.marecage      { background-color: #4db6ac; } /* Vert d'eau sombre */
-    .hex.neige         { background-color: #ffffff; color: #333; } /* Blanc */
-    .hex.steppe        { background-color: #d4e157; } /* Vert sec / Olive */
-    .hex.eau           { background-color: #4fc3f7; } /* Bleu clair */
-    .hex.eau_profonde  { background-color: #0288d1; cursor: not-allowed; } /* Bleu foncé */
-
-    /* On s'assure que le texte reste lisible sur les couleurs sombres ou blanches */
-    .hex.neige, .hex.sable, .hex.desert { color: #000; }
+    .key { color: #fbc02d; font-weight: bold; }
 </style>
 
-<div class="map-container">
-    {% for tile in tiles %}
-        {% set x = tile.coordQ * 45 %}
-        {% set y = tile.coordR * 52 + (tile.coordQ % 2) * 26 %}
-
-        {# Notez l'ajout de tile.type dans la liste des classes #}
-        <div class="hex {{ tile.type }}" 
-             style="left: {{ x }}px; top: {{ y }}px;"
-             data-q="{{ tile.coordQ }}"
-             data-r="{{ tile.coordR }}"
-             data-type="{{ tile.type }}"
-             title="{{ tile.type }} ({{ tile.coordQ }},{{ tile.coordR }})">
-            {{ tile.coordQ }},{{ tile.coordR }}
-        </div>
-    {% endfor %}
+<div id="ui">
+    <strong>Système de Perception</strong><br>
+    Position: <span id="pos-display">...</span><br>
+    Perception: <span id="percept-display">...</span><br>
+    <hr style="border: 0; border-top: 1px solid #444;">
+    <small>Status: <span id="status">Initialisation...</span></small>
 </div>
 
-<div id="info-box">
-    Case sélectionnée : <span id="selected-coords">Aucune</span>
-</div>
-
-<div style="position: fixed; top: 10px; left: 10px;">
-    <a href="{{ path('app_map_generate') }}" style="background: white; padding: 10px; text-decoration: none; border-radius: 5px; color: black; font-weight: bold;">
-        Réinitialiser la carte
-    </a>
-</div>
+<canvas id="mapCanvas"></canvas>
 
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const hexes = document.querySelectorAll('.hex');
-        const infoDisplay = document.getElementById('selected-coords');
+const canvas = document.getElementById('mapCanvas');
+const ctx = canvas.getContext('2d');
 
-        hexes.forEach(hex => {
-            hex.addEventListener('click', function() {
-                // 1. On retire la classe 'selected' de toutes les cases
-                hexes.forEach(h => h.classList.remove('selected'));
+// --- CONFIGURATION DU JOUEUR ---
+let player = {
+    q: 250, // Position centrale sur la carte 500x500
+    r: 250,
+    perception: 10 // Votre limite max
+};
 
-                // 2. On ajoute la classe à la case cliquée
-                this.classList.add('selected');
+const hexSize = 30; // Taille un peu plus grande pour mieux voir
+const hexHeight = Math.sqrt(3) * hexSize;
+const colors = {
+    'plaine': '#7cb342', 'colline': '#aed581', 'montagne': '#795548',
+    'desert': '#fbc02d', 'sable': '#fff176', 'marecage': '#4db6ac',
+    'neige': '#ffffff', 'steppe': '#d4e157', 'eau': '#4fc3f7',
+    'eau_profonde': '#0288d1'
+};
 
-                // 3. On met à jour l'affichage des infos
-                const q = this.getAttribute('data-q');
-                const r = this.getAttribute('data-r');
-                infoDisplay.innerText = `Q: ${q}, R: ${r}`;
+// Ajustement taille canvas
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Fonction pour dessiner un hexagone
+function drawHex(x, y, type, q, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+        let angle = (Math.PI / 3) * i;
+        let px = x + hexSize * Math.cos(angle);
+        let py = y + hexSize * Math.sin(angle);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = colors[type] || '#333';
+    ctx.fill();
+    
+    // Bordure discrète
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Optionnel : Afficher les coordonnées si on est assez près
+    if (hexSize > 25) {
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(`${q},${r}`, x, y + 5);
+    }
+}
+
+// Fonction pour dessiner le joueur
+function drawPlayer(x, y) {
+    ctx.beginPath();
+    ctx.arc(x, y, hexSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = "white";
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "white";
+    ctx.fill();
+    ctx.shadowBlur = 0; // Reset pour ne pas affecter le reste
+    ctx.strokeStyle = "black";
+    ctx.stroke();
+}
+
+function updateMap() {
+    document.getElementById('status').innerText = "Chargement...";
+    document.getElementById('pos-display').innerText = `${player.q}, ${player.r}`;
+    document.getElementById('percept-display').innerText = player.perception;
+
+    // Appel à votre nouvelle route API
+    fetch(`/api/map/${player.q}/${player.r}/${player.perception}`)
+        .then(response => response.json())
+        .then(tiles => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            tiles.forEach(tile => {
+                // Calcul de la position relative au joueur
+                const relQ = tile.q - player.q;
+                const relR = tile.r - player.r;
+
+                // Position en pixels (Flat Top)
+                // On ajoute un offset pour que le joueur (q,r) soit au centre exact
+                const x = centerX + relQ * (hexSize * 1.5);
+                const y = centerY + (relR * hexHeight) + ((tile.q % 2 !== player.q % 2) ? hexHeight / 2 : 0);
                 
-                console.log(`Tuile sélectionnée : Q=${q}, R=${r}`);
+                // Note : Le calcul du décalage (y) ci-dessus est simplifié pour le canvas centré
+                // Pour une précision parfaite sur les hexagones emboîtés :
+                const pixelX = centerX + (tile.q - player.q) * (hexSize * 1.5);
+                const pixelY = centerY + (tile.r - player.r) * hexHeight + (tile.q % 2) * (hexHeight / 2) - (player.q % 2) * (hexHeight / 2);
+
+                drawHex(pixelX, pixelY, tile.t, tile.q, tile.r);
             });
+
+            // On dessine le joueur toujours au centre
+            drawPlayer(centerX, centerY);
+            document.getElementById('status').innerText = "Ok";
+        })
+        .catch(err => {
+            document.getElementById('status').innerText = "Erreur API";
+            console.error(err);
         });
-    });
+}
+
+// Premier chargement
+updateMap();
 </script>
 {% endblock %}

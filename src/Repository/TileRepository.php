@@ -15,7 +15,18 @@ class TileRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, Tile::class);
     }
-
+public function findByViewDistance(int $playerQ, int $playerR, int $perception): array
+{
+    return $this->createQueryBuilder('t')
+        ->where('t.coordQ BETWEEN :minQ AND :maxQ')
+        ->andWhere('t.coordR BETWEEN :minR AND :maxR')
+        ->setParameter('minQ', $playerQ - $perception)
+        ->setParameter('maxQ', $playerQ + $perception)
+        ->setParameter('minR', $playerR - $perception)
+        ->setParameter('maxR', $playerR + $perception)
+        ->getQuery()
+        ->getResult();
+}
     //    /**
     //     * @return Tile[] Returns an array of Tile objects
     //     */
